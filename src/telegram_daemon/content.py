@@ -144,6 +144,14 @@ def media_info(message) -> dict | None:
         )
         if isinstance(media, types.MessageMediaVenue):
             result.update(label="Venue", title=media.title, address=media.address)
+        elif isinstance(media, types.MessageMediaGeoLive):
+            result.update(
+                label="Live location",
+                period=media.period,
+                heading=media.heading,
+                proximity_notification_radius=media.proximity_notification_radius,
+                accuracy_radius=getattr(geo, "accuracy_radius", None),
+            )
     elif isinstance(media, types.MessageMediaPoll):
         result.update(
             kind="poll",
@@ -249,3 +257,35 @@ def fingerprint(message: dict) -> str:
         media.pop(key, None)
     value = {"text": message["text"], "entities": message["entities"], "media": media}
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
+
+def is_live_location_update(before: dict | None, after: dict) -> bool:
+    """Recognize telemetry edits without discarding their coordinates from history."""
+    current = after.get("media") or {}
+    if current.get("tg_type") != "MessageMediaGeoLive":
+        return False
+    if before is None:
+        # An empty live location first seen mid-broadcast is a baseline, not a text edit.
+        return not after["text"] and not after["entities"]
+    previous = before.get("media") or {}
+    if previous.get("tg_type") != "MessageMediaGeoLive":
+        return False
+    if before["text"] != after["text"] or before["entities"] != after["entities"]:
+        return False
+    ignored = {
+        "latitude",
+        "longitude",
+        "period",
+        "heading",
+        "proximity_notification_radius",
+        "accuracy_radius",
+        # Older snapshots used "Location" and omitted the live metadata above.
+        "label",
+        "state",
+        "path",
+        "size",
+        "error",
+    }
+    return {k: v for k, v in previous.items() if k not in ignored} == {
+        k: v for k, v in current.items() if k not in ignored
+    }

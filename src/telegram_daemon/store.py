@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 from .config import Config, private_directory
-from .content import fingerprint
+from .content import fingerprint, is_live_location_update
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -173,7 +173,7 @@ class Store:
                 "UPDATE messages SET current_version=?,last_order=MAX(last_order,?) WHERE key=?",
                 (version_id, order, key),
             )
-            if edited:
+            if edited and not is_live_location_update(before, value):
                 self.db.execute(
                     "UPDATE messages SET expires=? WHERE key=?",
                     (now + config.changed_days * 86400, key),

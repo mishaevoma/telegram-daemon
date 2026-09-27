@@ -2,6 +2,15 @@ import sqlite3
 import time
 
 import pytest
+from telethon import types
+
+
+def live_location(latitude=3.4, longitude=1.2, **kwargs):
+    return types.MessageMediaGeoLive(
+        geo=types.GeoPoint(long=longitude, lat=latitude, access_hash=1, accuracy_radius=8),
+        period=kwargs.pop("period", 3600),
+        **kwargs,
+    )
 
 
 def test_message_id_namespaces_do_not_cross_delete(store, config, make_message):
@@ -101,3 +110,87 @@ def test_caption_edit_reuses_an_already_captured_attachment(store, config, make_
     assert store.version(updated)["media"]["state"] == "captured"
     assert store.version(updated)["media"]["path"] == "photo.jpg"
     assert store.media_job() is None
+
+
+def test_live_movement_is_saved_quietly_and_deletion_uses_latest_coordinates(
+    store, config, make_message
+):
+    original = make_message("", media=live_location())
+    first = store.ingest(original, False, config, 1)
+    expires = store.db.execute("SELECT expires FROM messages").fetchone()[0]
+    moved = make_message("", media=live_location(3.5, 1.3, heading=180), edited=time.time())
+    second = store.ingest(moved, True, config, 2)
+    assert store.ingest(moved, True, config, 2) is None
+    assert [v["media"]["latitude"] for v in store.history(first)] == [3.4, 3.5]
+    assert store.stats()["pending_events"] == 0
+    assert store.get("last_capture") == moved["observed_at"]
+    assert store.db.execute("SELECT expires FROM messages").fetchone()[0] == expires
+
+    assert store.deletions("common", [10], config, 1, 99) == 1
+    event = store.pending_event()
+    assert event["kind"] == "delete"
+    assert event["before"]["version_id"] == second
+    assert event["before"]["media"]["longitude"] == 1.3
+
+
+def test_live_location_first_seen_mid_broadcast_is_a_quiet_baseline(store, config, make_message):
+    first = store.ingest(
+        make_message("", media=live_location(), edited=time.time()), True, config, 1
+    )
+    assert store.version(first)["media"]["label"] == "Live location"
+    assert store.stats()["pending_events"] == 0
+    assert store.deletions("common", [10], config, 1, 99) == 1
+
+
+def test_live_location_old_snapshot_remains_quiet_after_upgrade(store, config, make_message):
+    original = make_message("", media=live_location())
+    original["media"]["label"] = "Location"
+    for key in ("period", "heading", "proximity_notification_radius", "accuracy_radius"):
+        original["media"].pop(key)
+    first = store.ingest(original, False, config, 1)
+    store.ingest(make_message("", media=live_location(3.5), edited=time.time()), True, config, 2)
+    assert len(store.history(first)) == 2
+    assert store.stats()["pending_events"] == 0
+
+
+def test_live_heading_accuracy_and_period_changes_are_saved_without_alerts(
+    store, config, make_message
+):
+    first = store.ingest(make_message("", media=live_location()), False, config, 1)
+    # A new heading/accuracy or an extended broadcast need not move the point.
+    media = live_location(heading=90, period=7200, proximity_notification_radius=100)
+    media.geo.accuracy_radius = 20
+    store.ingest(make_message("", media=media, edited=time.time()), True, config, 2)
+    saved = store.history(first)
+    assert len(saved) == 2
+    assert saved[-1]["media"]["heading"] == 90
+    assert saved[-1]["media"]["accuracy_radius"] == 20
+    assert store.stats()["pending_events"] == 0
+
+
+@pytest.mark.parametrize("change", ["text", "formatting", "static_location", "remove_location"])
+def test_live_locations_do_not_hide_material_edits(store, config, make_message, change):
+    store.ingest(make_message("Here", media=live_location()), False, config, 1)
+    updated = make_message("Here", media=live_location(3.5), edited=time.time())
+    if change == "text":
+        updated["text"] = "Meet here"
+    elif change == "formatting":
+        updated["entities"] = [{"type": "bold", "offset": 0, "length": 4}]
+    elif change == "static_location":
+        updated = make_message(
+            "Here",
+            media=types.MessageMediaGeo(geo=types.GeoPoint(long=2, lat=4, access_hash=1)),
+            edited=time.time(),
+        )
+    else:
+        updated["media"] = None
+    store.ingest(updated, True, config, 2)
+    assert store.stats()["pending_events"] == 1
+    assert store.pending_event()["after"]["text"] == updated["text"]
+
+
+def test_static_location_edits_are_still_reported(store, config, make_message):
+    for order, latitude in enumerate((3.4, 3.5), start=1):
+        media = types.MessageMediaGeo(geo=types.GeoPoint(long=1.2, lat=latitude, access_hash=1))
+        store.ingest(make_message("", media=media, edited=time.time()), order > 1, config, order)
+    assert store.stats()["pending_events"] == 1

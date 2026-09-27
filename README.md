@@ -24,6 +24,8 @@ Long reports are split within Telegram's limits. Continuations and attachments r
 
 Poll vote counts and link-preview refreshes do not create edit alerts. Reports explain attachments that are too large, unavailable, still downloading, or outside the storage budget. Downloads completed after the report's wait window remain local; they are not automatically sent later.
 
+Live-location movement, heading, accuracy, and broadcast-period updates are saved in history without creating edit alerts. A live location first encountered mid-broadcast establishes a quiet baseline when it has no text. Text/formatting changes, media replacements, and deletions still generate reports; a deletion includes the latest captured coordinates. Routine location updates use the ordinary cache retention and do not extend it to the changed-message retention period.
+
 **Setup**
 
 Use Python 3.11+ and [uv](https://docs.astral.sh/uv/). From the checkout:
