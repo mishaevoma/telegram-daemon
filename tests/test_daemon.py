@@ -117,3 +117,45 @@ async def test_long_report_continuations_reply_to_the_first_message(config, stor
     await daemon.deliver_one()
     assert daemon.bot.send.await_count == 2
     assert daemon.bot.send.call_args.args[1]["reply_to_id"] == 2
+
+
+@pytest.mark.parametrize("conflicts", [1, 2])
+async def test_polling_conflicts_preserve_capture_delivery_and_command_recovery(
+    config, store, make_message, conflicts
+):
+    daemon = app(config, store)
+    calls = 0
+    backoffs = []
+
+    async def poll(method, data):
+        nonlocal calls
+        calls += 1
+        assert method == "getUpdates"
+        assert data["offset"] == 0
+        if calls <= conflicts:
+            raise BotError(409, "terminated by other getUpdates request")
+        daemon.stop.set()
+        return [{"update_id": 11, **command("/status")}]
+
+    async def during_backoff(seconds):
+        backoffs.append(seconds)
+        assert store.stats()["bot_polling_conflict"] is True
+        assert store.stats()["last_bot_polling_conflict"] is not None
+        assert not daemon.stop.is_set()
+        if len(backoffs) == 1:
+            # Capture and delivery remain usable while command polling is unavailable.
+            store.ingest(make_message(), False, config, 1)
+            store.deletions("common", [10], config, 1, 99)
+            await daemon.deliver_one()
+            assert store.stats()["deliveries"]["sent"] == 1
+
+    daemon.bot.call = AsyncMock(side_effect=poll)
+    daemon.delay = during_backoff
+    await daemon.bot_loop()
+
+    assert backoffs == [60] * conflicts
+    assert store.stats()["messages"] == 1
+    assert store.stats()["bot_polling_conflict"] is False
+    assert store.get("bot_offset") == 12
+    daemon.bot.send.assert_awaited_once()
+    assert "Bot polling conflict: False" in daemon.bot.message.call_args.args[1]

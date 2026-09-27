@@ -41,6 +41,8 @@ You need your Telegram API ID/hash from [my.telegram.org](https://my.telegram.or
 
 Start the daemon, then open your bot and send `/start`. Reports stay queued until then. Only the numeric account authenticated by the daemon can receive reports or control it. Other users and group commands are ignored. Use a dedicated bot without an existing webhook or another polling process.
 
+If another process polls the same bot or a webhook conflicts, command polling backs off for 60 seconds while capture and report delivery continue. `tgdaemon status` exposes the polling conflict and its last occurrence. Stop the competing poller or use a dedicated bot to restore reliable commands. Reports still require prior `/start` activation.
+
 `init` prints the config path. Data lives outside the checkout in the OS application-data directory; `tgdaemon doctor` shows resolved paths. Every command accepts a leading `--config /absolute/path/config.toml`. See the [configuration template](src/telegram_daemon/example.toml).
 
 **Bot controls**

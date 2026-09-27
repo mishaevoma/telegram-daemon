@@ -342,6 +342,8 @@ class Store:
                 "heartbeat": self.get("heartbeat"),
                 "unclean_starts": self.get("unclean_starts", 0),
                 "last_disconnect": self.get("last_disconnect"),
+                "bot_polling_conflict": self.get("bot_polling_conflict", False),
+                "last_bot_polling_conflict": self.get("last_bot_polling_conflict"),
             }
 
     def search(self, query: str, limit=30) -> list[dict]:

@@ -280,6 +280,7 @@ class Daemon:
                 response = (
                     f"Mode: {self.config.monitor.mode}\nPaused: {stats['paused']}\n"
                     f"Telegram connected: {self.user.is_connected()}\n"
+                    f"Bot polling conflict: {stats['bot_polling_conflict']}\n"
                     f"Retained: {stats['messages']} messages / {stats['versions']} versions\n"
                     f"Pending reports: {stats['pending_events']}\n"
                     f"Pending parts: {states.get('pending', 0)}\n"
@@ -299,16 +300,27 @@ class Daemon:
                 updates = await self.bot.call(
                     "getUpdates", {"offset": offset, "timeout": 25, "allowed_updates": ["message"]}
                 )
+                if self.store.get("bot_polling_conflict", False):
+                    await self.db("set", "bot_polling_conflict", False)
+                    log.info("Bot command polling recovered")
                 for update in updates:
                     # Persist cursor only after applying the authorized command.
                     await self.handle_command(update)
                     offset = update["update_id"] + 1
                     await self.db("set", "bot_offset", offset)
             except BotError as exc:
-                if exc.code in {401, 409}:
-                    raise ValueError(
-                        "Bot token invalid or another bot poller/webhook is active"
-                    ) from None
+                if exc.code == 401:
+                    raise ValueError("Bot token invalid") from None
+                if exc.code == 409:
+                    if not self.store.get("bot_polling_conflict", False):
+                        log.warning(
+                            "Bot command polling conflicts with another poller or webhook; "
+                            "capture and report delivery continue. Retrying in 60 seconds."
+                        )
+                    await self.db("set", "bot_polling_conflict", True)
+                    await self.db("set", "last_bot_polling_conflict", time.time())
+                    await self.delay(60)
+                    continue
                 await self.delay(max(2, min(exc.retry_after or 5, 60)))
             except (RetryableConnection, AmbiguousDelivery):
                 await self.delay(3)
