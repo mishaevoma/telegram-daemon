@@ -1,0 +1,27 @@
+# Copy using `tgdaemon init`. Credentials are stored separately.
+data_dir = "__DEFAULT_DATA_DIR__"
+timezone = "UTC"
+
+[monitor]
+# personal: human direct messages; selected: listed IDs; all: all accessible chats.
+mode = "personal"
+chat_ids = []
+exclude_chat_ids = [777000]
+include_outgoing = true
+include_bots = false
+notify_edits = true
+notify_deletions = true
+
+[storage]
+cache_days = 7
+changed_days = 90
+min_free_mb = 256
+
+[media]
+download = true
+max_file_mb = 20
+budget_mb = 2048
+
+[bot]
+# Seconds to wait for a local media download before sending its fallback description.
+media_wait_seconds = 15

@@ -1,0 +1,36 @@
+[project]
+name = "telegram-daemon"
+version = "0.1.0"
+description = "A personal Telegram history daemon with private bot notifications"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.28,<1",
+    "platformdirs>=4,<5",
+    "telethon>=1.42,<2",
+]
+
+[project.scripts]
+tgdaemon = "telegram_daemon.cli:main"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[build-system]
+requires = ["uv_build>=0.11.7,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8,<10",
+    "pytest-asyncio>=1,<2",
+    "ruff>=0.13,<1",
+]

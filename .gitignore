@@ -216,3 +216,20 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Telegram credentials and private runtime state (normally outside this checkout)
+*.session
+*.session-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+credentials.json
+auth.ready
+daemon.lock
+config.local.toml
+.env.*
+!.env.example
+/data/
+/backups/
+/media/
